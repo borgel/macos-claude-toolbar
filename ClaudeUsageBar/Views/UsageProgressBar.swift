@@ -3,11 +3,16 @@ import SwiftUI
 struct UsageProgressBar: View {
     let percent: Double
     var height: CGFloat = 8
+    @AppStorage("redThresholdPercent") private var redThreshold: Double = 90
+
+    private var isAlert: Bool {
+        percent >= redThreshold
+    }
 
     private var color: Color {
         switch percent {
-        case 90...: return .red
-        case 70..<90: return .orange
+        case redThreshold...: return .red
+        case (redThreshold - 20)..<redThreshold: return .orange
         default: return .blue
         }
     }
@@ -20,7 +25,7 @@ struct UsageProgressBar: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: height / 2)
-                    .fill(Color.gray.opacity(0.2))
+                    .fill(Color.gray.opacity(isAlert ? 0.75 : 0.2))
 
                 RoundedRectangle(cornerRadius: height / 2)
                     .fill(color)

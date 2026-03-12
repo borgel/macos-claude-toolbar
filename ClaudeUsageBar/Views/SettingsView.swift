@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var authManager: AuthManager
     @State private var manualToken = ""
     @State private var showToken = false
+    @AppStorage("redThresholdPercent") private var redThreshold: Double = 90
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -28,6 +29,26 @@ struct SettingsView: View {
                 }
             }
             .font(.subheadline)
+
+            Divider()
+
+            // Red threshold setting
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Alert Threshold")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Slider(value: $redThreshold, in: 50...100, step: 5)
+                    Text("\(Int(redThreshold))%")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .frame(width: 40, alignment: .trailing)
+                }
+
+                Text("Icon turns red at this usage level")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
 
             Divider()
 

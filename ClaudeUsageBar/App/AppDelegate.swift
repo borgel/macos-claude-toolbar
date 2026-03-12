@@ -67,10 +67,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 
             // Color the text for high usage
+            let redThreshold = UserDefaults.standard.object(forKey: "redThresholdPercent") as? Double ?? 90
             let color: NSColor
             switch session.percentUsed {
-            case 90...: color = .systemRed
-            case 70..<90: color = .systemOrange
+            case redThreshold...: color = .systemRed
+            case (redThreshold - 20)..<redThreshold: color = .systemOrange
             default: color = .labelColor
             }
 
@@ -78,8 +79,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 string: percentText,
                 attributes: [.font: font, .foregroundColor: color]
             )
+
+            // Translucent background when in red state for visibility against wallpaper
+            button.wantsLayer = true
+            if color == .systemRed {
+                button.layer?.backgroundColor = NSColor.gray.withAlphaComponent(0.3).cgColor
+                button.layer?.cornerRadius = 3
+            } else {
+                button.layer?.backgroundColor = nil
+            }
         } else {
             button.title = "—%"
+            button.wantsLayer = true
+            button.layer?.backgroundColor = nil
         }
     }
 
