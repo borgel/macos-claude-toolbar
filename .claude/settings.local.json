@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(sw_vers && swift --version 2>/dev/null && xcodebuild -version 2>/dev/null | head -2)",
+      "Bash(security find-generic-password:*)",
+      "Bash(security dump-keychain:*)",
+      "Bash(claude --version)",
+      "Bash(npm list:*)",
+      "Read(//Users/borgel/.local/share/claude/versions/**)",
+      "Bash(npm root:*)",
+      "Read(//Users/borgel/working/macos-claude-toolbar/**)",
+      "WebFetch(domain:claude.ai)",
+      "Bash(xcodegen generate:*)",
+      "Bash(swift:*)",
+      "Bash(xcodebuild -scheme ClaudeUsageBar build 2>&1 | tail -20)",
+      "Bash(git add:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(pkill -x ClaudeUsageBar)",
+      "Bash(open ~/Library/Developer/Xcode/DerivedData/ClaudeUsageBar-*/Build/Products/Debug/ClaudeUsageBar.app)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
