@@ -1,0 +1,25 @@
+name: ClaudeUsageBar
+options:
+  bundleIdPrefix: com.borgel
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  minimumXcodeGenVersion: "2.35"
+
+targets:
+  ClaudeUsageBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: ClaudeUsageBar
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.borgel.ClaudeUsageBar
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_LSUIElement: true
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_ENTITLEMENTS: ClaudeUsageBar/Resources/ClaudeUsageBar.entitlements
+        INFOPLIST_FILE: ClaudeUsageBar/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: false
