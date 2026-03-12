@@ -24,22 +24,3 @@ struct SessionUsageView: View {
         }
     }
 }
-
-private func relativeTimeString(_ date: Date) -> String {
-    let now = Date()
-    let interval = date.timeIntervalSince(now)
-
-    if interval <= 0 {
-        return "soon"
-    }
-
-    let totalMinutes = Int(interval / 60)
-    let hours = totalMinutes / 60
-    let minutes = totalMinutes % 60
-
-    if hours > 0 {
-        return "in \(hours) hr \(minutes) min"
-    } else {
-        return "in \(minutes) min"
-    }
-}

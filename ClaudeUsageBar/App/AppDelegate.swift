@@ -63,7 +63,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
 
         if let session = data.session {
-            button.title = "\(Int(session.percentUsed))%"
+            let percentText = "\(Int(session.percentUsed))%"
+            let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
+            // Color the text for high usage
+            let color: NSColor
+            switch session.percentUsed {
+            case 90...: color = .systemRed
+            case 70..<90: color = .systemOrange
+            default: color = .labelColor
+            }
+
+            button.attributedTitle = NSAttributedString(
+                string: percentText,
+                attributes: [.font: font, .foregroundColor: color]
+            )
         } else {
             button.title = "—%"
         }
