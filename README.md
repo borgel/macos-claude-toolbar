@@ -65,6 +65,10 @@ xcodegen generate
 open ClaudeUsageBar.xcodeproj
 ```
 
+### Pre-built binary
+
+Download the latest build from [GitHub Actions](https://github.com/borgel/macos-claude-toolbar/actions/workflows/build.yml) — click the most recent successful run and grab the **ClaudeUsageBar** artifact.
+
 ### Install
 
-Copy `ClaudeUsageBar.app` from the build output to `/Applications` (or anywhere you like) and launch it. The app runs as a menu bar item with no Dock icon.
+Copy `ClaudeUsageBar.app` to `/Applications` (or anywhere you like) and launch it. The app runs as a menu bar item with no Dock icon.
