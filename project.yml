@@ -21,5 +21,7 @@ targets:
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         CODE_SIGN_ENTITLEMENTS: ClaudeUsageBar/Resources/ClaudeUsageBar.entitlements
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
         INFOPLIST_FILE: ClaudeUsageBar/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: false

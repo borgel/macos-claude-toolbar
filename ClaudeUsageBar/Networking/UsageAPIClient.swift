@@ -1,5 +1,17 @@
 import Foundation
 
+private func debugLog(_ message: String) {
+    let entry = "\(Date()): \(message)\n"
+    let path = "/tmp/claude_usage_debug.log"
+    if let handle = FileHandle(forWritingAtPath: path) {
+        handle.seekToEndOfFile()
+        handle.write(entry.data(using: .utf8)!)
+        handle.closeFile()
+    } else {
+        try? entry.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+}
+
 @MainActor
 class UsageAPIClient: ObservableObject {
     @Published var usageData = UsageDisplayData()
@@ -14,11 +26,14 @@ class UsageAPIClient: ObservableObject {
     }
 
     func fetchUsage() async {
+        debugLog("fetchUsage called, authState=\(authManager.state)")
         guard let token = authManager.token else {
+            debugLog("No token available")
             usageData.error = .notAuthenticated
             return
         }
 
+        debugLog("Have token: \(String(token.prefix(20)))...")
         isFetching = true
         defer { isFetching = false }
 
@@ -34,8 +49,9 @@ class UsageAPIClient: ObservableObject {
 
             // Log raw response during development
             if let rawString = String(data: data, encoding: .utf8) {
-                print("[API] Status: \(httpResponse.statusCode)")
-                print("[API] Response: \(rawString)")
+                debugLog("Status: \(httpResponse.statusCode)")
+                debugLog("Response: \(rawString)")
+                try? rawString.write(toFile: "/tmp/claude_usage_response.json", atomically: true, encoding: .utf8)
             }
 
             switch httpResponse.statusCode {
@@ -58,11 +74,23 @@ class UsageAPIClient: ObservableObject {
                 usageData.error = .networkError("HTTP \(httpResponse.statusCode): \(body)")
             }
         } catch {
+            debugLog("Network error: \(error)")
             usageData.error = .networkError(error.localizedDescription)
         }
     }
 
-    // MARK: - Flexible JSON Parsing
+    // MARK: - JSON Parsing
+    //
+    // Actual API response format:
+    // {
+    //   "five_hour": { "utilization": 61.0, "resets_at": "2026-03-13T00:00:00.742888+00:00" },
+    //   "seven_day": { "utilization": 29.0, "resets_at": "..." },
+    //   "seven_day_sonnet": { "utilization": 0.0, "resets_at": null },
+    //   "seven_day_opus": null,
+    //   "seven_day_oauth_apps": null,
+    //   "seven_day_cowork": null,
+    //   "extra_usage": { "is_enabled": true, "monthly_limit": 5000, "used_credits": 0.0, "utilization": null }
+    // }
 
     private func parseUsageResponse(_ data: Data) {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -70,91 +98,49 @@ class UsageAPIClient: ObservableObject {
             return
         }
 
-        // Parse session usage
-        if let session = json["session"] as? [String: Any] {
-            let percentUsed = session["percentUsed"] as? Double
-                ?? session["percent_used"] as? Double
-                ?? session["usage_percent"] as? Double
-                ?? 0
+        debugLog("Parsing keys: \(json.keys.sorted())")
 
-            var resetTime: Date?
-            if let resetStr = session["resetTime"] as? String ?? session["reset_time"] as? String {
-                resetTime = parseISO8601(resetStr)
-            } else if let resetMs = session["resetTime"] as? Double ?? session["reset_time"] as? Double {
-                resetTime = Date(timeIntervalSince1970: resetMs / 1000.0)
-            }
-
-            usageData.session = SessionUsage(percentUsed: percentUsed, resetTime: resetTime)
+        // five_hour → session usage
+        if let fiveHour = json["five_hour"] as? [String: Any] {
+            let utilization = fiveHour["utilization"] as? Double ?? 0
+            let resetTime = (fiveHour["resets_at"] as? String).flatMap { parseISO8601($0) }
+            usageData.session = SessionUsage(percentUsed: utilization, resetTime: resetTime)
+            debugLog("Parsed session: \(utilization)%")
         }
 
-        // Parse weekly limits
-        if let weekly = json["weeklyLimits"] as? [String: Any]
-            ?? json["weekly_limits"] as? [String: Any]
-            ?? json["weekly"] as? [String: Any] {
+        // seven_day + seven_day_sonnet → weekly limits
+        let sevenDay = json["seven_day"] as? [String: Any]
+        let sevenDaySonnet = json["seven_day_sonnet"] as? [String: Any]
 
-            let allModels = parseModelLimit(weekly["allModels"] as? [String: Any]
-                ?? weekly["all_models"] as? [String: Any])
-            let sonnetOnly = parseModelLimit(weekly["sonnetOnly"] as? [String: Any]
-                ?? weekly["sonnet_only"] as? [String: Any]
-                ?? weekly["sonnet"] as? [String: Any])
-
+        if sevenDay != nil || sevenDaySonnet != nil {
+            let allModels = parseUtilizationEntry(sevenDay, description: "All Models")
+            let sonnetOnly = parseUtilizationEntry(sevenDaySonnet, description: "Sonnet Only")
             usageData.weeklyLimits = WeeklyLimits(allModels: allModels, sonnetOnly: sonnetOnly)
+            debugLog("Parsed weekly: allModels=\(allModels?.percentUsed ?? -1), sonnet=\(sonnetOnly?.percentUsed ?? -1)")
         }
 
-        // Parse extra usage / billing
-        if let extra = json["extraUsage"] as? [String: Any]
-            ?? json["extra_usage"] as? [String: Any]
-            ?? json["billing"] as? [String: Any] {
-
-            let amountSpent = parseDecimal(extra["amountSpent"] ?? extra["amount_spent"])
-            let monthlyLimit = parseDecimal(extra["monthlySpendLimit"] ?? extra["monthly_spend_limit"])
-            let balance = parseDecimal(extra["currentBalance"] ?? extra["current_balance"])
-            let autoReload = extra["autoReloadEnabled"] as? Bool
-                ?? extra["auto_reload_enabled"] as? Bool
-
-            var resetDate: Date?
-            if let resetStr = extra["resetDate"] as? String ?? extra["reset_date"] as? String {
-                resetDate = parseISO8601(resetStr)
-            }
+        // extra_usage → billing
+        if let extra = json["extra_usage"] as? [String: Any] {
+            let usedCredits = extra["used_credits"] as? Double ?? 0
+            let monthlyLimit = extra["monthly_limit"] as? Double
+            let isEnabled = extra["is_enabled"] as? Bool
 
             usageData.extraUsage = ExtraUsage(
-                amountSpent: amountSpent ?? 0,
-                resetDate: resetDate,
-                monthlySpendLimit: monthlyLimit,
-                currentBalance: balance,
-                autoReloadEnabled: autoReload
+                amountSpent: Decimal(usedCredits),
+                resetDate: nil,
+                monthlySpendLimit: monthlyLimit.map { Decimal($0) },
+                currentBalance: nil,
+                autoReloadEnabled: isEnabled
             )
+            debugLog("Parsed extra: spent=\(usedCredits), limit=\(monthlyLimit ?? -1)")
         }
     }
 
-    private func parseModelLimit(_ dict: [String: Any]?) -> ModelLimit? {
+    private func parseUtilizationEntry(_ dict: [String: Any]?, description: String) -> ModelLimit? {
         guard let dict = dict else { return nil }
-
-        let percentUsed = dict["percentUsed"] as? Double
-            ?? dict["percent_used"] as? Double
-            ?? 0
-
-        var resetTime: Date?
-        if let resetStr = dict["resetTime"] as? String ?? dict["reset_time"] as? String {
-            resetTime = parseISO8601(resetStr)
-        } else if let resetMs = dict["resetTime"] as? Double ?? dict["reset_time"] as? Double {
-            resetTime = Date(timeIntervalSince1970: resetMs / 1000.0)
-        }
-
-        let description = dict["description"] as? String
-
-        return ModelLimit(percentUsed: percentUsed, resetTime: resetTime, description: description)
-    }
-
-    private func parseDecimal(_ value: Any?) -> Decimal? {
-        if let num = value as? Double {
-            return Decimal(num)
-        } else if let str = value as? String {
-            return Decimal(string: str)
-        } else if let num = value as? Int {
-            return Decimal(num)
-        }
-        return nil
+        let utilization = dict["utilization"] as? Double ?? 0
+        let resetTime = (dict["resets_at"] as? String).flatMap { parseISO8601($0) }
+        return ModelLimit(percentUsed: utilization, resetTime: resetTime, description: description)
     }
 
     private func parseISO8601(_ string: String) -> Date? {
