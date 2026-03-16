@@ -27,6 +27,10 @@ class UsageAPIClient: ObservableObject {
 
     func fetchUsage() async {
         debugLog("fetchUsage called, authState=\(authManager.state)")
+
+        // Ensure we have a valid token, refreshing if expired
+        await authManager.ensureAuthenticated()
+
         guard let token = authManager.token else {
             debugLog("No token available")
             usageData.error = .notAuthenticated
@@ -37,6 +41,51 @@ class UsageAPIClient: ObservableObject {
         isFetching = true
         defer { isFetching = false }
 
+        let (statusCode, data) = await performRequest(token: token)
+        guard let statusCode = statusCode, let data = data else { return }
+
+        switch statusCode {
+        case 200:
+            parseUsageResponse(data)
+            usageData.lastUpdated = Date()
+            usageData.error = nil
+
+        case 401:
+            // Token rejected by server — attempt refresh and retry once
+            debugLog("Got 401, attempting token refresh...")
+            await authManager.refreshClaudeCodeTokenIfNeeded()
+            if let newToken = authManager.token, newToken != token {
+                debugLog("Retrying with refreshed token")
+                let (retryStatus, retryData) = await performRequest(token: newToken)
+                guard let retryStatus = retryStatus, let retryData = retryData else { return }
+                if retryStatus == 200 {
+                    parseUsageResponse(retryData)
+                    usageData.lastUpdated = Date()
+                    usageData.error = nil
+                } else {
+                    authManager.markExpired()
+                    usageData.error = .tokenExpired
+                }
+            } else {
+                authManager.markExpired()
+                usageData.error = .tokenExpired
+            }
+
+        case 429:
+            let retryAfter = lastRetryAfter
+            usageData.error = .rateLimited(retryAfter: retryAfter)
+
+        default:
+            let body = String(data: data, encoding: .utf8) ?? "No body"
+            usageData.error = .networkError("HTTP \(statusCode): \(body)")
+        }
+    }
+
+    /// Tracks Retry-After from the most recent response (used across helper calls)
+    private var lastRetryAfter: TimeInterval?
+
+    /// Perform a single API request with the given token. Returns (statusCode, data) or sets error and returns nils.
+    private func performRequest(token: String) async -> (Int?, Data?) {
         var request = URLRequest(url: URL(string: baseURL)!)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -47,35 +96,20 @@ class UsageAPIClient: ObservableObject {
             let (data, response) = try await session.data(for: request)
             let httpResponse = response as! HTTPURLResponse
 
-            // Log raw response during development
             if let rawString = String(data: data, encoding: .utf8) {
                 debugLog("Status: \(httpResponse.statusCode)")
                 debugLog("Response: \(rawString)")
                 try? rawString.write(toFile: "/tmp/claude_usage_response.json", atomically: true, encoding: .utf8)
             }
 
-            switch httpResponse.statusCode {
-            case 200:
-                parseUsageResponse(data)
-                usageData.lastUpdated = Date()
-                usageData.error = nil
+            lastRetryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
+                .flatMap { TimeInterval($0) }
 
-            case 401:
-                authManager.markExpired()
-                usageData.error = .tokenExpired
-
-            case 429:
-                let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
-                    .flatMap { TimeInterval($0) }
-                usageData.error = .rateLimited(retryAfter: retryAfter)
-
-            default:
-                let body = String(data: data, encoding: .utf8) ?? "No body"
-                usageData.error = .networkError("HTTP \(httpResponse.statusCode): \(body)")
-            }
+            return (httpResponse.statusCode, data)
         } catch {
             debugLog("Network error: \(error)")
             usageData.error = .networkError(error.localizedDescription)
+            return (nil, nil)
         }
     }
 

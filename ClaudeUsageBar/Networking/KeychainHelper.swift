@@ -39,6 +39,40 @@ enum KeychainHelper {
         )
     }
 
+    // MARK: - Claude Code Token Update (after refresh)
+
+    /// Update the Claude Code OAuth token in the Keychain after a successful refresh.
+    static func updateClaudeCodeToken(accessToken: String, refreshToken: String?, expiresAt: Date?) -> Bool {
+        let account = NSUserName()
+
+        // Read existing keychain data to preserve other fields
+        guard let existingData = readKeychainItem(service: claudeCodeService, account: account),
+              var json = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
+              var oauth = json["claudeAiOauth"] as? [String: Any] else {
+            print("[Keychain] Cannot update Claude Code token: failed to read existing entry")
+            return false
+        }
+
+        oauth["accessToken"] = accessToken
+        if let refreshToken = refreshToken {
+            oauth["refreshToken"] = refreshToken
+        }
+        if let expiresAt = expiresAt {
+            oauth["expiresAt"] = expiresAt.timeIntervalSince1970 * 1000.0
+        }
+
+        json["claudeAiOauth"] = oauth
+
+        guard let updatedData = try? JSONSerialization.data(withJSONObject: json) else {
+            print("[Keychain] Failed to serialize updated token data")
+            return false
+        }
+
+        // Delete and re-add (Keychain doesn't have a great update API)
+        deleteKeychainItem(service: claudeCodeService, account: account)
+        return addKeychainItem(service: claudeCodeService, account: account, data: updatedData)
+    }
+
     // MARK: - App's Own Token Storage
 
     /// Save a manually-entered token to the app's own Keychain entry.
